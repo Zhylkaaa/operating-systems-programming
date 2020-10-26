@@ -24,7 +24,7 @@ typedef struct messages_buffer {
 
 messages_buffer buffer;
 
-rk_sema write_sem;
+rk_sema head_modify_sem;
 pthread_mutex_t buffer_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t read_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t full_cond = PTHREAD_COND_INITIALIZER;
@@ -49,10 +49,10 @@ void write_to_buffer(int writer_id){
     usleep(GetRandomTime(800));
 
     if(buffer.head == NULL){
-        CHECK_ERROR(rk_sema_wait(&write_sem), "locking write semaphore")
+        CHECK_ERROR(rk_sema_wait(&head_modify_sem), "locking write semaphore")
         // Write
         buffer.head = buffer.tail = msg;
-        CHECK_ERROR(rk_sema_post(&write_sem), "unlocking write semaphore")
+        CHECK_ERROR(rk_sema_post(&head_modify_sem), "unlocking write semaphore")
         pthread_cond_signal(&null_head_cond);
     } else {
         buffer.tail->next_message = msg;
@@ -95,7 +95,7 @@ int Reader(void* data) {
         CHECK_ERROR(pthread_mutex_lock(&read_mutex), "locking read mutex")
         num_readers++;
         if(num_readers == 1){
-            CHECK_ERROR(rk_sema_wait(&write_sem), "locking write semaphore")
+            CHECK_ERROR(rk_sema_wait(&head_modify_sem), "locking write semaphore")
         }
         CHECK_ERROR(pthread_mutex_unlock(&read_mutex), "unlocking read mutex")
 
@@ -112,7 +112,7 @@ int Reader(void* data) {
         CHECK_ERROR(pthread_mutex_lock(&read_mutex), "locking read mutex")
         num_readers--;
         if(num_readers == 0){
-            CHECK_ERROR(rk_sema_post(&write_sem), "unlocking write semaphore")
+            CHECK_ERROR(rk_sema_post(&head_modify_sem), "unlocking write semaphore")
         }
         CHECK_ERROR(pthread_mutex_unlock(&read_mutex), "unlocking read semaphore")
 
@@ -132,7 +132,7 @@ int Buffer(void* data){
         // wait before removing element from messages_buffer
         usleep(GetRandomTime(500));
         CHECK_ERROR(pthread_mutex_lock(&buffer_mutex), "locking buffer mutex")
-        CHECK_ERROR(rk_sema_wait(&write_sem), "locking write semaphore")
+        CHECK_ERROR(rk_sema_wait(&head_modify_sem), "locking write semaphore")
 
         if(buffer.head != NULL) {
             i++;
@@ -147,11 +147,11 @@ int Buffer(void* data){
 
             buffer.current_size -= 1;
             CHECK_ERROR(pthread_mutex_unlock(&buffer_mutex), "unlocking buffer mutex")
-            CHECK_ERROR(rk_sema_post(&write_sem), "unlocking write semaphore")
+            CHECK_ERROR(rk_sema_post(&head_modify_sem), "unlocking write semaphore")
             pthread_cond_signal(&full_cond);
         } else {
             CHECK_ERROR(pthread_mutex_unlock(&buffer_mutex), "unlocking buffer mutex")
-            CHECK_ERROR(rk_sema_post(&write_sem), "unlocking write semaphore")
+            CHECK_ERROR(rk_sema_post(&head_modify_sem), "unlocking write semaphore")
         }
     }
     return 0;
@@ -163,7 +163,7 @@ int main(int argc, char* argv[])
 
 
     // semaphores initialization
-    rk_sema_init(&write_sem, 1);
+    rk_sema_init(&head_modify_sem, 1);
 
     pthread_t writerThreads[WRITERS_COUNT];
     pthread_t readerThreads[READERS_COUNT];
@@ -239,7 +239,7 @@ int main(int argc, char* argv[])
 
     pthread_join(bufferThread,NULL);
     /// Destroy semaphores
-    rk_sema_destroy(&write_sem);
+    rk_sema_destroy(&head_modify_sem);
     ////
 
     return 0;
