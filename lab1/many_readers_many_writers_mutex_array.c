@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
 
         if (rc != 0)
         {
-            fprintf(stderr,"Couldn't create the reader threads");
+            fprintf(stderr,"Couldn't create the writer threads");
             exit (-1);
         }
     }
