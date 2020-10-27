@@ -2,16 +2,18 @@
 // Created by @Zhylkaaa on 26/10/2020.
 //
 
-#include "many_readers_many_writers_mutex_array.h"
+#include "many_writers_limited_readers.h"
 
-#define READER_TURNS 10
+#define READER_TURNS 15
 #define READERS_COUNT 5
 #define WRITER_TURNS 10
-#define BUFFER_SIZE 5
-#define WRITER_TURNS 10
-#define WRITERS_COUNT 3
+#define BUFFER_SIZE 3
+#define WRITERS_COUNT 5
 
-pthread_mutex_t mutex_array[BUFFER_SIZE];
+rk_sema read_sem[BUFFER_SIZE];
+rk_sema write_sem[BUFFER_SIZE];
+pthread_mutex_t acquisition_mutex[BUFFER_SIZE];
+int readers_counter[BUFFER_SIZE];
 int messages[BUFFER_SIZE];
 
 //returns random amount of time from [1, max]
@@ -29,7 +31,7 @@ int Writer(void* data) {
         // find unused buffer
         while(!success){
             for(buff_id = 0;buff_id<BUFFER_SIZE;buff_id++){
-                if(pthread_mutex_trylock(&mutex_array[buff_id]) == 0){
+                if(rk_sema_trywait(&write_sem[buff_id]) == 0){
                     // Write
                     printf("(W) Writer %d started writing to buffer %d...\n", threadId, buff_id);
                     fflush(stdout);
@@ -37,8 +39,8 @@ int Writer(void* data) {
                     usleep(GetRandomNumber(800));
                     printf("(W) Writer %d finished writing to buffer %d msg %d\n", threadId, buff_id, messages[buff_id]);
                     fflush(stdout);
+                    CHECK_ERROR(rk_sema_post(&write_sem[buff_id]), "unlocking mutex")
                     success = 1;
-                    CHECK_ERROR(pthread_mutex_unlock(&mutex_array[buff_id]), "unlocking mutex")
                     break;
                 }
             }
@@ -47,8 +49,6 @@ int Writer(void* data) {
         // Think, think, think, think
         usleep(GetRandomNumber(1000));
     }
-
-    free(data);
 
     return 0;
 }
@@ -60,10 +60,21 @@ int Reader(void* data) {
 
     for (i = 0; i < READER_TURNS; i++) {
         success = 0;
-
         while(!success){
             for(buff_id=0;buff_id<BUFFER_SIZE;buff_id++){
-                if(pthread_mutex_trylock(&mutex_array[buff_id]) == 0){
+                if(rk_sema_trywait(&read_sem[buff_id]) == 0){
+                    CHECK_ERROR(pthread_mutex_lock(&acquisition_mutex[i]), "locking acquisition mutex")
+                    readers_counter[buff_id]++;
+                    if(readers_counter[buff_id] == 1){
+                        if(rk_sema_trywait(&write_sem[buff_id]) != 0){
+                            readers_counter[buff_id]--;
+                            CHECK_ERROR(rk_sema_post(&read_sem[buff_id]), "posting read semaphore")
+                            CHECK_ERROR(pthread_mutex_unlock(&acquisition_mutex[i]), "unlocking acquisition mutex")
+                            continue;
+                        }
+                    }
+                    CHECK_ERROR(pthread_mutex_unlock(&acquisition_mutex[i]), "unlocking acquisition mutex")
+
                     // Read
                     printf("(R) Reader %d started reading buffer %d...\n", threadId, buff_id);
                     fflush(stdout);
@@ -71,8 +82,15 @@ int Reader(void* data) {
                     usleep(GetRandomNumber(200));
                     printf("(R) Reader %d finished reading buffer %d: msg %d\n", threadId, buff_id, messages[buff_id]);
                     fflush(stdout);
+
+                    CHECK_ERROR(pthread_mutex_lock(&acquisition_mutex[i]), "locking acquisition mutex")
+                    readers_counter[buff_id]--;
+                    if(readers_counter[buff_id] == 0){
+                        CHECK_ERROR(rk_sema_post(&write_sem[buff_id]), "unlocking write semaphore")
+                    }
+                    CHECK_ERROR(pthread_mutex_unlock(&acquisition_mutex[i]), "unlocking acquisition mutex")
+                    CHECK_ERROR(rk_sema_post(&read_sem[buff_id]), "posting read semaphore")
                     success = 1;
-                    CHECK_ERROR(pthread_mutex_unlock(&mutex_array[buff_id]), "unlocking mutex")
                     break;
                 }
             }
@@ -93,10 +111,15 @@ int main(int argc, char* argv[])
     pthread_t writerThreads[WRITERS_COUNT];
     pthread_t readerThreads[READERS_COUNT];
 
-    int i,rc;
+    int i, rc, readers_limit;
 
-    for(i=0;i<BUFFER_SIZE;i++){
-        CHECK_ERROR(pthread_mutex_init(&mutex_array[i], NULL), "initializing mutex")
+    // init semaphores and mutexes
+    for(i = 0;i<BUFFER_SIZE;i++){
+        readers_limit = GetRandomNumber(READERS_COUNT);
+        rk_sema_init(&read_sem[i], readers_limit);
+        rk_sema_init(&write_sem[i], 1);
+        printf("(I) semaphore %d have readers limit %d\n", i, readers_limit);
+        CHECK_ERROR(pthread_mutex_init(&acquisition_mutex[i], NULL), "initializing acquisition mutex")
     }
 
     // Create the Writer threads
@@ -147,8 +170,11 @@ int main(int argc, char* argv[])
     for (i = 0; i < WRITERS_COUNT; i++)
         pthread_join(writerThreads[i],NULL);
 
+    // releasing mutexes and semaphores
     for(i=0;i<BUFFER_SIZE;i++){
-        CHECK_ERROR(pthread_mutex_destroy(&mutex_array[i]), "destroying mutex")
+        CHECK_ERROR(pthread_mutex_destroy(&acquisition_mutex[i]), "destroying acquisition mutex")
+        rk_sema_destroy(&read_sem[i]);
+        rk_sema_destroy(&write_sem[i]);
     }
 
     return 0;

@@ -34,7 +34,7 @@ int num_readers = 0;
 int msg_id = 0;
 
 //returns random amount of time from [1, max]
-int GetRandomTime(int max){
+int GetRandomNumber(int max){
     return (rand() % max) + 1;
 }
 
@@ -46,7 +46,7 @@ void write_to_buffer(int writer_id){
 
     printf("(W) Writer %d started writing message %d...\n", writer_id, msg->i);
     fflush(stdout);
-    usleep(GetRandomTime(800));
+    usleep(GetRandomNumber(800));
 
     if(buffer.head == NULL){
         CHECK_ERROR(rk_sema_wait(&head_modify_sem), "locking write semaphore")
@@ -80,7 +80,7 @@ int Writer(void* data) {
         CHECK_ERROR(pthread_mutex_unlock(&buffer_mutex), "unlocking buffer mutex")
 
         // Think, think, think, think
-        usleep(GetRandomTime(1000));
+        usleep(GetRandomNumber(1000));
     }
 
     return 0;
@@ -104,7 +104,7 @@ int Reader(void* data) {
             printf("(R) Reader %d started reading message %d...\n", threadId, buffer.head->i);
             fflush(stdout);
             // Read, read, read...
-            usleep(GetRandomTime(100));
+            usleep(GetRandomNumber(100));
             printf("(R) Reader %d finished reading message %d\n", threadId, buffer.head->i);
             i++;
         }
@@ -116,7 +116,7 @@ int Reader(void* data) {
         }
         CHECK_ERROR(pthread_mutex_unlock(&read_mutex), "unlocking read semaphore")
 
-        usleep(GetRandomTime(1500));
+        usleep(GetRandomNumber(1500));
     }
 
     free(data);
@@ -127,10 +127,10 @@ int Reader(void* data) {
 
 // Buffer thread function
 int Buffer(void* data){
-    usleep(GetRandomTime(500));
+    usleep(GetRandomNumber(500));
     for(int i = 0;i<WRITER_TURNS*WRITERS_COUNT;){
         // wait before removing element from messages_buffer
-        usleep(GetRandomTime(500));
+        usleep(GetRandomNumber(500));
         CHECK_ERROR(pthread_mutex_lock(&buffer_mutex), "locking buffer mutex")
         CHECK_ERROR(rk_sema_wait(&head_modify_sem), "locking write semaphore")
 
@@ -180,7 +180,7 @@ int main(int argc, char* argv[])
     // Create the Writer threads
     for (i = 0; i < WRITERS_COUNT; i++) {
         // Reader initialization - takes random amount of time
-        usleep(GetRandomTime(100));
+        usleep(GetRandomNumber(100));
         int* threadId = malloc(sizeof(int));
         *threadId = i;
         rc = pthread_create(
@@ -211,7 +211,7 @@ int main(int argc, char* argv[])
     // Create the Reader threads
     for (i = 0; i < READERS_COUNT; i++) {
         // Reader initialization - takes random amount of time
-        usleep(GetRandomTime(1000));
+        usleep(GetRandomNumber(1000));
         int* threadId = malloc(sizeof(int));
         *threadId = i;
         rc = pthread_create(

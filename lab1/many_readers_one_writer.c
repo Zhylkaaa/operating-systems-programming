@@ -9,7 +9,7 @@ rk_sema write_sem;
 int num_readers = 0;
 
 //returns random amount of time from [1, max]
-int GetRandomTime(int max){
+int GetRandomNumber(int max){
     return (rand() % max) + 1;
 }
 
@@ -23,13 +23,13 @@ int Writer(void* data) {
         // Write
         printf("(W) Writer started writing...\n");
         fflush(stdout);
-        usleep(GetRandomTime(800));
+        usleep(GetRandomNumber(800));
         printf("(W) finished\n");
 
         CHECK_ERROR(rk_sema_post(&write_sem), "unlocking write")
 
         // Think, think, think, think
-        usleep(GetRandomTime(1000));
+        usleep(GetRandomNumber(1000));
     }
 
     return 0;
@@ -52,7 +52,7 @@ int Reader(void* data) {
         printf("(R) Reader %d started reading...\n", threadId);
         fflush(stdout);
         // Read, read, read...
-        usleep(GetRandomTime(200));
+        usleep(GetRandomNumber(200));
         printf("Reader %d finished reading\n", threadId);
 
         CHECK_ERROR(rk_sema_wait(&read_sem), "locking read")
@@ -62,7 +62,7 @@ int Reader(void* data) {
         }
         CHECK_ERROR(rk_sema_post(&read_sem), "unlocking read")
 
-        usleep(GetRandomTime(800));
+        usleep(GetRandomNumber(800));
     }
 
     free(data);
@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
     // Create the Reader threads
     for (i = 0; i < READERS_COUNT; i++) {
         // Reader initialization - takes random amount of time
-        usleep(GetRandomTime(1000));
+        usleep(GetRandomNumber(1000));
         int* threadId = malloc(sizeof(int));
         *threadId = i;
         rc = pthread_create(
